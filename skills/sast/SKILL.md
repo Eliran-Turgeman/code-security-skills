@@ -1,6 +1,6 @@
 ---
-name: sast-scan
-description: Static analysis for insecure code patterns using Semgrep (Docker-first). Trigger on: static analysis, insecure code, injection, is my code secure.
+name: "sast-scan"
+description: "Static analysis for insecure code patterns using Semgrep (Docker-first). Trigger on: static analysis; insecure code; injection; is my code secure."
 ---
 
 ## Goal

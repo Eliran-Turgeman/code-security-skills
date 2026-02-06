@@ -1,6 +1,6 @@
 ---
-name: iac-scan
-description: IaC and configuration scanning using Trivy config (Docker-first). Trigger on: IaC, terraform, k8s, dockerfile, github actions, configuration security, is my code secure.
+name: "iac-scan"
+description: "IaC and configuration scanning using Trivy config (Docker-first). Trigger on: IaC; terraform; k8s; dockerfile; github actions; configuration security; is my code secure."
 ---
 
 ## Goal
