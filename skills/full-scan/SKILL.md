@@ -1,6 +1,6 @@
 ---
-name: "full-security-scan"
-description: "Orchestrate secrets, SAST, SCA, and IaC scans and produce a unified report. Trigger on: is my code secure; full scan; comprehensive security scan."
+name: full-security-scan
+description: Run secrets, SAST, SCA, and IaC scans then produce a unified report. Use for full or comprehensive security scans.
 ---
 
 ## Goal
@@ -15,6 +15,7 @@ Run secrets, SAST, SCA, and IaC scans sequentially and produce a unified report 
   - `shared/DOCKER_IMAGES.md`
   - `shared/CANONICAL_FINDING_SCHEMA.md`
   - `shared/TRIAGE_RULES.md`
+  - `skills/reporting/SKILL.md`
 
 ## Safety constraints
 
@@ -30,13 +31,20 @@ Run the following skills in order:
 2. `skills/sast/SKILL.md`
 3. `skills/sca/SKILL.md`
 4. `skills/iac/SKILL.md`
+5. `skills/reporting/SKILL.md`
 
-Each skill writes normalized output to:
+Each scan skill writes normalized output to:
 
 - `/out/findings.secrets.json`
 - `/out/findings.sast.json`
 - `/out/findings.sca.json`
 - `/out/findings.iac.json`
+
+Then run the reporting script for deterministic output:
+
+```bash
+python skills/reporting/scripts/render_report.py --input-dir /out --report-json /out/report.json --report-md /out/report.md
+```
 
 ## Output normalization
 
@@ -44,16 +52,11 @@ Each skill writes normalized output to:
 - De-duplicate by `id`.
 - Apply `shared/TRIAGE_RULES.md` sorting.
 - Write unified output to `/out/report.json`.
+- Write a consistent markdown report to `/out/report.md`.
 
 ## User-facing report format
 
-Write `/out/report.md` with the following sections:
-
-- Summary table (counts by category and severity)
-- Top 10 fixes (sorted by triage rules)
-- Findings by category
-- Coverage notes (what was scanned and any limitations)
-- Rerun instructions
+The report format is defined in `skills/reporting/references/REPORT_FORMAT.md`.
 
 ## Prioritization
 
@@ -91,4 +94,7 @@ docker run --rm \
   -v "$PWD/out:/out" \
   aquasec/trivy:0.50.1 \
   config --format json -o /out/trivy.json /repo
+
+# Report
+python skills/reporting/scripts/render_report.py --input-dir /out --report-json /out/report.json --report-md /out/report.md
 ```
