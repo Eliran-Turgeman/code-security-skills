@@ -1,0 +1,4 @@
+interface:
+  display_name: "Security Scan"
+  short_description: "Run full security scan and render a unified report."
+  default_prompt: "Run secrets, SAST, SCA, and IaC scans in parallel and render the unified report."

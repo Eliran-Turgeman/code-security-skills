@@ -1,30 +1,25 @@
-﻿# code-security-skills
+# code-security-skills
 
 A repository of deterministic, Docker-first security scanning skills that standardize how agents run common scanners and normalize findings into a shared schema.
 
 ## How agents use this repo
 
-Agents load skills from `skills/` and choose the appropriate skill based on user intent. Each skill runs a specific scanner, normalizes output to a canonical finding schema, and produces structured, reproducible results.
+Agents load skills from `skills/` and choose the appropriate skill based on user intent. The single skill runs all scanners in parallel, normalizes output to a canonical finding schema, and produces a structured report.
 
 ## Available skills
 
-- `secrets` - Detect leaked credentials, keys, and tokens using Gitleaks.
-- `sast` - Static analysis for insecure code patterns using Semgrep (auto config).
-- `sca` - Dependency vulnerability scanning using OSV-Scanner.
-- `iac` - Infrastructure and configuration scanning using Trivy config.
-- `reporting` - Deterministic reporting from normalized findings.
-- `full-scan` - Orchestrates all scans sequentially and produces a unified report.
+- `security-scan` - Run secrets, SAST, SCA, and IaC scans in parallel and render a unified report.
 
 ## Example user flows
 
 User: "Is my code secure?"
-Agent: invokes `skills/full-scan/SKILL.md`
+Agent: invokes `skills/security-scan/SKILL.md`
 
-User: "Do I have secrets?"
-Agent: invokes `skills/secrets/SKILL.md`
+User: "Run a full security scan"
+Agent: invokes `skills/security-scan/SKILL.md`
 
 User: "Show me the scan results"
-Agent: invokes `skills/reporting/SKILL.md`
+Agent: invokes `skills/security-scan/SKILL.md`
 
 ## Philosophy
 
@@ -44,42 +39,12 @@ code-security-skills/
   README.md
 
   skills/
-    secrets/
+    security-scan/
       SKILL.md
-      references/
-        TOOLING.md
-        OUTPUT_SCHEMA.md
-
-    sast/
-      SKILL.md
-      references/
-        TOOLING.md
-        OUTPUT_SCHEMA.md
-
-    sca/
-      SKILL.md
-      references/
-        TOOLING.md
-        OUTPUT_SCHEMA.md
-
-    iac/
-      SKILL.md
-      references/
-        TOOLING.md
-        OUTPUT_SCHEMA.md
-
-    reporting/
-      SKILL.md
+      agents/
+        openai.yaml
       scripts/
         render_report.py
       references/
         REPORT_FORMAT.md
-
-    full-scan/
-      SKILL.md
-
-  shared/
-    CANONICAL_FINDING_SCHEMA.md
-    TRIAGE_RULES.md
-    DOCKER_IMAGES.md
 ```

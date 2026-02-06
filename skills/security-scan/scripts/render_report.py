@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Deterministic report renderer for canonical security findings.
 
@@ -119,7 +119,7 @@ def dedupe_findings(findings):
         if existing is None:
             by_id[fid] = f
             continue
-        # Keep higher severity/confidence
+
         def score(x):
             sev = (x.get("severity") or "info").lower()
             conf = (x.get("confidence") or "low").lower()
@@ -159,7 +159,10 @@ def format_finding_row(f):
     start_line = normalize_line(f.get("start_line"))
     loc = f"{file_path}:{start_line}" if start_line else file_path
     remediation = f.get("remediation") or "See tool guidance"
-    return f"- **{f.get('severity', 'info').lower()}** {f.get('title', 'Untitled')} ({loc})\n  Remediation: {remediation}"
+    return (
+        f"- **{f.get('severity', 'info').lower()}** {f.get('title', 'Untitled')}"
+        f" ({loc})\n  Remediation: {remediation}"
+    )
 
 
 def write_report_md(path, findings, coverage_notes, rerun_notes):
@@ -232,11 +235,10 @@ def main():
     args = parser.parse_args()
 
     inputs = list(args.inputs or [])
-    if not inputs:
-        if os.path.isdir(args.input_dir):
-            for name in os.listdir(args.input_dir):
-                if name.startswith("findings.") and name.endswith(".json"):
-                    inputs.append(os.path.join(args.input_dir, name))
+    if not inputs and os.path.isdir(args.input_dir):
+        for name in os.listdir(args.input_dir):
+            if name.startswith("findings.") and name.endswith(".json"):
+                inputs.append(os.path.join(args.input_dir, name))
 
     if not inputs:
         print("No input files found.", file=sys.stderr)
@@ -260,7 +262,7 @@ def main():
     ]
 
     rerun_notes = [
-        "Run the scanner-specific Docker commands from the corresponding skills.",
+        "Run the scanner Docker commands from the skill.",
         "Ensure /out contains findings.*.json before rendering the report.",
     ]
 
