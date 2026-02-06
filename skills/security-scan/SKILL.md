@@ -10,7 +10,9 @@ Run secrets, SAST, SCA, and IaC scans in parallel, normalize results to the cano
 ## Inputs
 
 - Repo root mounted read-only at `/repo`
-- Output directory mounted at `/out`\n## Safety constraints
+- Output directory mounted at `/out`
+
+## Safety constraints
 
 - Never print raw secrets.
 - Only read from `/repo:ro`.
@@ -19,42 +21,46 @@ Run secrets, SAST, SCA, and IaC scans in parallel, normalize results to the cano
 
 ## Tool invocation (parallel)
 
-Run all scanners in parallel, then wait for completion. Use pinned Docker images from `shared/DOCKER_IMAGES.md`.
+Run all scanners in parallel, then wait for completion. Use the latest Docker image tags listed below.
 
 ### Bash (Linux/macOS)
 
 ```bash
 mkdir -p out
 
+# Gitleaks (directory scan; avoids "not a git repository" errors)
 docker run --rm \
   -v "$PWD:/repo:ro" \
   -v "$PWD/out:/out" \
-  zricethezav/gitleaks:v8.18.2 \
-  detect --source /repo --report-format json --report-path /out/gitleaks.json &
+  zricethezav/gitleaks:latest \
+  dir /repo --report-path /out/gitleaks.json &
 
 p1=$!
 
+# Semgrep
 docker run --rm \
   -v "$PWD:/repo:ro" \
   -v "$PWD/out:/out" \
-  semgrep/semgrep:1.60.0 \
-  semgrep --config auto --json --output /out/semgrep.json /repo &
+  semgrep/semgrep:latest \
+  semgrep scan --config auto --json --json-output=/out/semgrep.json /repo &
 
 p2=$!
 
+# OSV-Scanner
 docker run --rm \
   -v "$PWD:/repo:ro" \
   -v "$PWD/out:/out" \
-  ghcr.io/google/osv-scanner:v1.7.1 \
-  --format json -o /out/osv.json --recursive /repo &
+  ghcr.io/google/osv-scanner:latest \
+  scan --format json --output /out/osv.json /repo &
 
 p3=$!
 
+# Trivy config
 docker run --rm \
   -v "$PWD:/repo:ro" \
   -v "$PWD/out:/out" \
-  aquasec/trivy:0.50.1 \
-  config --format json -o /out/trivy.json /repo &
+  aquasec/trivy:latest \
+  config --format json --output /out/trivy.json /repo &
 
 p4=$!
 
@@ -68,14 +74,18 @@ mkdir -Force out | Out-Null
 
 $jobs = @()
 
-$jobs += Start-Job { docker run --rm -v "$PWD:/repo:ro" -v "$PWD/out:/out" zricethezav/gitleaks:v8.18.2 detect --source /repo --report-format json --report-path /out/gitleaks.json }
-$jobs += Start-Job { docker run --rm -v "$PWD:/repo:ro" -v "$PWD/out:/out" semgrep/semgrep:1.60.0 semgrep --config auto --json --output /out/semgrep.json /repo }
-$jobs += Start-Job { docker run --rm -v "$PWD:/repo:ro" -v "$PWD/out:/out" ghcr.io/google/osv-scanner:v1.7.1 --format json -o /out/osv.json --recursive /repo }
-$jobs += Start-Job { docker run --rm -v "$PWD:/repo:ro" -v "$PWD/out:/out" aquasec/trivy:0.50.1 config --format json -o /out/trivy.json /repo }
+$jobs += Start-Job { docker run --rm -v "$PWD:/repo:ro" -v "$PWD/out:/out" zricethezav/gitleaks:latest dir /repo --report-path /out/gitleaks.json }
+$jobs += Start-Job { docker run --rm -v "$PWD:/repo:ro" -v "$PWD/out:/out" semgrep/semgrep:latest semgrep scan --config auto --json --json-output=/out/semgrep.json /repo }
+$jobs += Start-Job { docker run --rm -v "$PWD:/repo:ro" -v "$PWD/out:/out" ghcr.io/google/osv-scanner:latest scan --format json --output /out/osv.json /repo }
+$jobs += Start-Job { docker run --rm -v "$PWD:/repo:ro" -v "$PWD/out:/out" aquasec/trivy:latest config --format json --output /out/trivy.json /repo }
 
 $jobs | Wait-Job | Receive-Job | Out-Null
 $jobs | Remove-Job | Out-Null
 ```
+
+Notes:
+
+- If you want full git history scanning and your repo has `.git`, replace the Gitleaks command with `gitleaks git /repo --report-path /out/gitleaks.json`.
 
 ## Output normalization
 
@@ -149,18 +159,15 @@ Use the same Docker commands above, then run:
 ```bash
 python skills/security-scan/scripts/render_report.py --input-dir /out --report-json /out/report.json --report-md /out/report.md
 ```
+
 ## Inline References
 
-### Docker Images
+### Docker Images (Latest)
 
-# Docker Images (Pinned)
-
-All scanners must run via Docker, with pinned versions. Skills reference these image tags.
-
-- gitleaks: zricethezav/gitleaks:v8.18.2
-- semgrep: semgrep/semgrep:1.60.0
-- osv: ghcr.io/google/osv-scanner:v1.7.1
-- trivy: aquasec/trivy:0.50.1
+- gitleaks: `zricethezav/gitleaks:latest`
+- semgrep: `semgrep/semgrep:latest`
+- osv: `ghcr.io/google/osv-scanner:latest`
+- trivy: `aquasec/trivy:latest`
 
 Required runtime conventions:
 
@@ -168,14 +175,11 @@ Required runtime conventions:
 - Write outputs to `/out`
 - No native installs
 
-
 ### Canonical Finding Schema
-
-# Canonical Finding Schema
 
 All skills must normalize tool output to this schema. Output is an array of findings in JSON.
 
-## Fields
+#### Fields
 
 - `id`: Stable hash derived from tool + file + location + rule id or fingerprint.
 - `category`: `secrets` | `sast` | `sca` | `iac`
@@ -191,7 +195,7 @@ All skills must normalize tool output to this schema. Output is an array of find
 - `evidence`: Short snippet that avoids secrets; redact sensitive values
 - `remediation`: Clear fix guidance
 
-## JSON Example
+#### JSON Example
 
 ```json
 [
@@ -213,21 +217,18 @@ All skills must normalize tool output to this schema. Output is an array of find
 ]
 ```
 
-## Normalization Rules
+#### Normalization Rules
 
 - Always include `id`, `category`, `severity`, `confidence`, `tool`, `title`, `file`.
 - Use `null` for `package` and `version` when not applicable.
 - Keep `evidence` to a short redacted snippet.
 - Line numbers are required when the tool provides them; otherwise set to `0`.
 
-
 ### Triage Rules
-
-# Triage Rules
 
 These rules define prioritization across categories. All skills and the full scan must apply them when sorting findings.
 
-## Priority Order (Highest to Lowest)
+#### Priority Order (Highest to Lowest)
 
 1. Secrets (any severity)
 2. RCE and injection issues (SAST)
@@ -236,124 +237,19 @@ These rules define prioritization across categories. All skills and the full sca
 5. Public IaC exposure or overly permissive access (IaC)
 6. All other findings by severity
 
-## Severity Sort
+#### Severity Sort
 
 Within each priority group, sort by severity:
 
 `critical` > `high` > `medium` > `low` > `info`
 
-## Confidence Sort
+#### Confidence Sort
 
 Within same severity, sort by confidence:
 
 `high` > `medium` > `low`
 
-## De-duplication
+#### De-duplication
 
 - Findings with the same `id` are considered duplicates.
 - Prefer the finding with the higher severity or confidence.
-## Inline References
-
-### Docker Images
-
-# Docker Images (Pinned)
-
-All scanners must run via Docker, with pinned versions. Skills reference these image tags.
-
-- gitleaks: zricethezav/gitleaks:v8.18.2
-- semgrep: semgrep/semgrep:1.60.0
-- osv: ghcr.io/google/osv-scanner:v1.7.1
-- trivy: aquasec/trivy:0.50.1
-
-Required runtime conventions:
-
-- Mount repo read-only at `/repo:ro`
-- Write outputs to `/out`
-- No native installs
-
-
-### Canonical Finding Schema
-
-# Canonical Finding Schema
-
-All skills must normalize tool output to this schema. Output is an array of findings in JSON.
-
-## Fields
-
-- `id`: Stable hash derived from tool + file + location + rule id or fingerprint.
-- `category`: `secrets` | `sast` | `sca` | `iac`
-- `severity`: `critical` | `high` | `medium` | `low` | `info`
-- `confidence`: `high` | `medium` | `low`
-- `tool`: Scanner name (e.g., `gitleaks`, `semgrep`, `osv`, `trivy`)
-- `title`: Short human-readable title
-- `file`: Path relative to repo root
-- `start_line`: 1-based line number
-- `end_line`: 1-based line number
-- `package`: Dependency name (SCA only; omit or null otherwise)
-- `version`: Dependency version (SCA only; omit or null otherwise)
-- `evidence`: Short snippet that avoids secrets; redact sensitive values
-- `remediation`: Clear fix guidance
-
-## JSON Example
-
-```json
-[
-  {
-    "id": "sha256:5a8f...",
-    "category": "secrets",
-    "severity": "critical",
-    "confidence": "high",
-    "tool": "gitleaks",
-    "title": "AWS access key detected",
-    "file": "src/config.js",
-    "start_line": 12,
-    "end_line": 12,
-    "package": null,
-    "version": null,
-    "evidence": "AWS_ACCESS_KEY_ID=REDACTED",
-    "remediation": "Remove the secret, rotate the key, and use environment variables or a secrets manager."
-  }
-]
-```
-
-## Normalization Rules
-
-- Always include `id`, `category`, `severity`, `confidence`, `tool`, `title`, `file`.
-- Use `null` for `package` and `version` when not applicable.
-- Keep `evidence` to a short redacted snippet.
-- Line numbers are required when the tool provides them; otherwise set to `0`.
-
-
-### Triage Rules
-
-# Triage Rules
-
-These rules define prioritization across categories. All skills and the full scan must apply them when sorting findings.
-
-## Priority Order (Highest to Lowest)
-
-1. Secrets (any severity)
-2. RCE and injection issues (SAST)
-3. SSRF and auth bypass (SAST)
-4. Runtime dependency vulnerabilities (SCA)
-5. Public IaC exposure or overly permissive access (IaC)
-6. All other findings by severity
-
-## Severity Sort
-
-Within each priority group, sort by severity:
-
-`critical` > `high` > `medium` > `low` > `info`
-
-## Confidence Sort
-
-Within same severity, sort by confidence:
-
-`high` > `medium` > `low`
-
-## De-duplication
-
-- Findings with the same `id` are considered duplicates.
-- Prefer the finding with the higher severity or confidence.
-
-
