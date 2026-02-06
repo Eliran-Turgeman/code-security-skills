@@ -1,4 +1,4 @@
-﻿---
+---
 name: sca-scan
 description: Dependency vulnerability scanning using OSV-Scanner (Docker-first). Trigger on: dependency vulnerabilities, SCA, vulnerable packages, is my code secure.
 ---

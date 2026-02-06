@@ -1,4 +1,4 @@
-﻿---
+---
 name: full-security-scan
 description: Orchestrate secrets, SAST, SCA, and IaC scans and produce a unified report. Trigger on: is my code secure, full scan, comprehensive security scan.
 ---

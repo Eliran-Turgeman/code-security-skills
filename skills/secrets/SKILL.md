@@ -1,4 +1,4 @@
-﻿---
+---
 name: secrets-scan
 description: Detect leaked secrets using Gitleaks (Docker-first). Trigger on: detect secrets, leaked credentials, keys, tokens, is my code secure.
 ---
