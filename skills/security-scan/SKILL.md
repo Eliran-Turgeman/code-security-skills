@@ -70,23 +70,19 @@ wait $p1 $p2 $p3 $p4
 ### PowerShell (Windows)
 
 ```powershell
-mkdir -Force out | Out-Null
-
-$jobs = @()
-
-$jobs += Start-Job { docker run --rm -v "${PWD}:/repo:ro" -v "${PWD}/out:/out" zricethezav/gitleaks:latest dir /repo --report-path /out/gitleaks.json }
-$jobs += Start-Job { docker run --rm -v "${PWD}:/repo:ro" -v "${PWD}/out:/out" semgrep/semgrep:latest semgrep scan --config auto --json --json-output=/out/semgrep.json /repo }
-$jobs += Start-Job { docker run --rm -v "${PWD}:/repo:ro" -v "${PWD}/out:/out" ghcr.io/google/osv-scanner:latest scan --format json --output /out/osv.json /repo }
-$jobs += Start-Job { docker run --rm -v "${PWD}:/repo:ro" -v "${PWD}/out:/out" aquasec/trivy:latest config --format json --output /out/trivy.json /repo }
-
-$jobs | Wait-Job | Receive-Job | Out-Null
-$jobs | Remove-Job | Out-Null
+powershell -NoProfile -File skills/security-scan/scripts/run_scan.ps1
 ```
 
 If you run the PowerShell snippet via `powershell -NoProfile -Command`, wrap the whole command in single quotes to avoid `$` expansion by the outer shell:
 
 ```text
-powershell -NoProfile -Command 'mkdir -Force out | Out-Null; $jobs = @(); $jobs += Start-Job { docker run --rm -v "${PWD}:/repo:ro" -v "${PWD}/out:/out" zricethezav/gitleaks:latest dir /repo --report-path /out/gitleaks.json }; $jobs += Start-Job { docker run --rm -v "${PWD}:/repo:ro" -v "${PWD}/out:/out" semgrep/semgrep:latest semgrep scan --config auto --json --json-output=/out/semgrep.json /repo }; $jobs += Start-Job { docker run --rm -v "${PWD}:/repo:ro" -v "${PWD}/out:/out" ghcr.io/google/osv-scanner:latest scan --format json --output /out/osv.json /repo }; $jobs += Start-Job { docker run --rm -v "${PWD}:/repo:ro" -v "${PWD}/out:/out" aquasec/trivy:latest config --format json --output /out/trivy.json /repo }; $jobs | Wait-Job | Receive-Job | Out-Null; $jobs | Remove-Job | Out-Null'
+powershell -NoProfile -File skills/security-scan/scripts/run_scan.ps1
+```
+
+If your current PowerShell session emits PSReadLine warnings, run from `cmd.exe` to avoid loading your profile:
+
+```text
+cmd /c powershell -NoProfile -File skills\\security-scan\\scripts\\run_scan.ps1
 ```
 
 Notes:
