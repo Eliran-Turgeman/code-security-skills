@@ -3,14 +3,27 @@ name: security-scan
 description: Run full code security scans (secrets, SAST, SCA, IaC) and render a unified report. Use for is my code secure, full scan, comprehensive security scan, or post-scan reporting.
 ---
 
-## Goal
+## Overview
 
-Run secrets, SAST, SCA, and IaC scans in parallel, normalize results to the canonical schema, and render a consistent report using the bundled script.
+Run a full security scan (secrets, SAST, SCA, IaC), normalize outputs deterministically, and render a consistent report. Do not use this skill for partial scans.
 
 ## Inputs
 
-- Repo root mounted read-only at `/repo`
-- Output directory mounted at `/out`
+- Repository path (default: current directory)
+- Output directory (default: `./out`)
+
+## Outputs
+
+- `out/gitleaks.json`
+- `out/semgrep.json`
+- `out/osv.json`
+- `out/trivy.json`
+- `out/findings.secrets.json`
+- `out/findings.sast.json`
+- `out/findings.sca.json`
+- `out/findings.iac.json`
+- `out/report.json`
+- `out/report.md`
 
 ## Safety constraints
 
@@ -18,71 +31,66 @@ Run secrets, SAST, SCA, and IaC scans in parallel, normalize results to the cano
 - Only read from `/repo:ro`.
 - Write outputs only to `/out`.
 - Do not invent or drop fields in findings.
+- Use the bundled scripts for normalization and reporting to ensure deterministic output.
 
-## Tool invocation (parallel)
+## Steps (imperative)
 
-Run all scanners in parallel, then wait for completion. Use the latest Docker image tags listed below.
+1. Run all scanners sequentially. Use the exact per-tool commands below to run each scanner and produce raw JSON outputs in `out/`.
+2. Ensure each tool completes successfully before starting the next.
+2. Normalize findings with `normalize_findings.py` to produce `out/findings.*.json`.
+3. Render the report with `render_report.py` to produce `out/report.json` and `out/report.md`.
 
-### Bash (Linux/macOS)
+## Quick start
+
+Run each tool command sequentially, then normalize and report:
 
 ```bash
-mkdir -p out
+python skills/security-scan/scripts/normalize_findings.py --out-dir out
+python skills/security-scan/scripts/render_report.py --input-dir out --report-json out/report.json --report-md out/report.md
+```
 
-# Gitleaks (directory scan; avoids "not a git repository" errors)
+## Run scanners (per-tool commands)
+
+Use the latest Docker image tags listed below. Run all four commands sequentially.
+
+### Gitleaks (secrets)
+
+```bash
 docker run --rm \
   -v "$PWD:/repo:ro" \
   -v "$PWD/out:/out" \
   zricethezav/gitleaks:latest \
-  dir /repo --report-path /out/gitleaks.json &
+  dir /repo --report-path /out/gitleaks.json
+```
 
-p1=$!
+### Semgrep (SAST)
 
-# Semgrep
+```bash
 docker run --rm \
   -v "$PWD:/repo:ro" \
   -v "$PWD/out:/out" \
   semgrep/semgrep:latest \
-  semgrep scan --config auto --json --json-output=/out/semgrep.json /repo &
+  semgrep scan --config auto --json --json-output=/out/semgrep.json /repo
+```
 
-p2=$!
+### OSV-Scanner (SCA)
 
-# OSV-Scanner
+```bash
 docker run --rm \
   -v "$PWD:/repo:ro" \
   -v "$PWD/out:/out" \
   ghcr.io/google/osv-scanner:latest \
-  scan --format json --output /out/osv.json /repo &
+  scan --format json --output /out/osv.json /repo
+```
 
-p3=$!
+### Trivy Config (IaC)
 
-# Trivy config
+```bash
 docker run --rm \
   -v "$PWD:/repo:ro" \
   -v "$PWD/out:/out" \
   aquasec/trivy:latest \
-  config --format json --output /out/trivy.json /repo &
-
-p4=$!
-
-wait $p1 $p2 $p3 $p4
-```
-
-### PowerShell (Windows)
-
-```powershell
-powershell -NoProfile -File skills/security-scan/scripts/run_scan.ps1
-```
-
-If you run the PowerShell snippet via `powershell -NoProfile -Command`, wrap the whole command in single quotes to avoid `$` expansion by the outer shell:
-
-```text
-powershell -NoProfile -File skills/security-scan/scripts/run_scan.ps1
-```
-
-If your current PowerShell session emits PSReadLine warnings, run from `cmd.exe` to avoid loading your profile:
-
-```text
-cmd /c powershell -NoProfile -File skills\\security-scan\\scripts\\run_scan.ps1
+  config --format json --output /out/trivy.json /repo
 ```
 
 Notes:
@@ -146,7 +154,7 @@ Mapping rules:
 After normalization, always run the reporting script to produce consistent output. Do not improvise reporting.
 
 ```bash
-python skills/security-scan/scripts/render_report.py --input-dir /out --report-json /out/report.json --report-md /out/report.md
+python skills/security-scan/scripts/render_report.py --input-dir out --report-json out/report.json --report-md out/report.md
 ```
 
 ## Output
@@ -154,17 +162,9 @@ python skills/security-scan/scripts/render_report.py --input-dir /out --report-j
 - `/out/report.json`: merged, triaged findings list
 - `/out/report.md`: human-readable report in a consistent format
 
-## How to rerun locally
+## Inline references
 
-Use the same Docker commands above, then run:
-
-```bash
-python skills/security-scan/scripts/render_report.py --input-dir /out --report-json /out/report.json --report-md /out/report.md
-```
-
-## Inline References
-
-### Docker Images (Latest)
+### Docker images (latest)
 
 - gitleaks: `zricethezav/gitleaks:latest`
 - semgrep: `semgrep/semgrep:latest`
@@ -177,7 +177,7 @@ Required runtime conventions:
 - Write outputs to `/out`
 - No native installs
 
-### Canonical Finding Schema
+### Canonical finding schema
 
 All skills must normalize tool output to this schema. Output is an array of findings in JSON.
 
@@ -197,7 +197,7 @@ All skills must normalize tool output to this schema. Output is an array of find
 - `evidence`: Short snippet that avoids secrets; redact sensitive values
 - `remediation`: Clear fix guidance
 
-#### JSON Example
+#### JSON example
 
 ```json
 [
@@ -219,18 +219,18 @@ All skills must normalize tool output to this schema. Output is an array of find
 ]
 ```
 
-#### Normalization Rules
+#### Normalization rules
 
 - Always include `id`, `category`, `severity`, `confidence`, `tool`, `title`, `file`.
 - Use `null` for `package` and `version` when not applicable.
 - Keep `evidence` to a short redacted snippet.
 - Line numbers are required when the tool provides them; otherwise set to `0`.
 
-### Triage Rules
+### Triage rules
 
 These rules define prioritization across categories. All skills and the full scan must apply them when sorting findings.
 
-#### Priority Order (Highest to Lowest)
+#### Priority order (highest to lowest)
 
 1. Secrets (any severity)
 2. RCE and injection issues (SAST)
@@ -239,13 +239,13 @@ These rules define prioritization across categories. All skills and the full sca
 5. Public IaC exposure or overly permissive access (IaC)
 6. All other findings by severity
 
-#### Severity Sort
+#### Severity sort
 
 Within each priority group, sort by severity:
 
 `critical` > `high` > `medium` > `low` > `info`
 
-#### Confidence Sort
+#### Confidence sort
 
 Within same severity, sort by confidence:
 

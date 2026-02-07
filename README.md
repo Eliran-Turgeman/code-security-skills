@@ -1,20 +1,34 @@
 # code-security-skills
 
-A repository of deterministic, security scanning skills that standardize how agents run common scanners and normalize findings into a shared schema.
+A single, deterministic Codex skill for running secrets, SAST, SCA, and IaC scans in parallel and rendering a unified report.
 
-## Available skills
+## Available skill
 
-- `security-scan` - Run secrets, SAST, SCA, and IaC scans in parallel and render a unified report.
+- `security-scan` - Run Gitleaks, Semgrep, OSV-Scanner, and Trivy in parallel and render a unified report.
 
-## Install
+## Install (Codex)
 
-### Codex
-Within Codex, run `$skill-installer install skill from https://github.com/Eliran-Turgeman/code-security-skills/tree/master/skills/security-scan`
+1. Copy `skills/security-scan` into your Codex skills directory:
+   - Windows: `%USERPROFILE%\.codex\skills\security-scan`
+   - macOS/Linux: `~/.codex/skills/security-scan`
+2. Restart Codex so it reloads skills.
 
-## Invoke
+## Invoke (Codex)
 
-### Codex
-Run `$security-scan`
+In the agent chat, use any of these prompts:
+
+- "Is my code secure?"
+- "Run a full security scan."
+- "Show me the scan results."
+
+## Run Locally
+
+From the repo root, run each scanner command sequentially (see `skills/security-scan/SKILL.md`), then normalize and render the report:
+
+```bash
+python skills/security-scan/scripts/normalize_findings.py --out-dir out
+python skills/security-scan/scripts/render_report.py --input-dir out --report-json out/report.json --report-md out/report.md
+```
 
 ## Requirements
 
