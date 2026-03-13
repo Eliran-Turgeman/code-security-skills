@@ -24,7 +24,7 @@ Copy `.github/skills/security-scan/` into one of the supported personal location
 
 ## Invoke
 
-In the agent chat, use any of these prompts:
+In the agent chat, you can invoke the skill via `$security-scan` or prompts like these:
 
 - "Is my code secure?"
 - "Run a full security scan."
