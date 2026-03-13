@@ -1,12 +1,14 @@
 ---
 name: security-scan
-description: 'Run a full security scan (secrets + SAST + SCA + IaC) using Dockerized scanners (Gitleaks, Semgrep, OSV-Scanner, Trivy), then normalize and render a unified report. Use for: "is my code secure", comprehensive security scan, code scan, secrets scan, SAST scan, supply-chain scan, IaC scan, or generating report.md/report.json for CI artifacts. Never use for partial scans.'
+description: 'Run a full security scan (secrets + SAST + SCA + IaC) using Dockerized scanners (Gitleaks, Semgrep, OSV-Scanner, Trivy), then normalize/render a unified report and run LAUNCH_SECURITY_CHECK for behavioral and architecture flaws static scanners may miss. Use for: "is my code secure", comprehensive security scan, code scan, secrets scan, SAST scan, supply-chain scan, IaC scan, or generating report.md/report.json for CI artifacts. Never use for partial scans.'
 argument-hint: 'Run from the repo root; outputs written to ./out.'
 ---
 
 # Security Scan (Full)
 
 This skill runs **all four** categories of scanners and produces a **single, consistent report** for builders who don’t have a security background.
+
+After static results are generated, run a **LAUNCH_SECURITY_CHECK** manual review for high-impact issues that scanners often miss.
 
 ## What You Get
 
@@ -15,6 +17,7 @@ The scan writes raw tool outputs plus normalized findings and a rendered report.
 - Raw scanner outputs (JSON): `out/gitleaks.json`, `out/semgrep.json`, `out/osv.json`, `out/trivy.json`
 - Normalized findings (canonical schema): `out/findings.secrets.json`, `out/findings.sast.json`, `out/findings.sca.json`, `out/findings.iac.json`
 - Unified report: `out/report.json`, `out/report.md`
+- Manual review findings (recommended): `out/manual-review.md`
 
 ## Safety Rules (Non-Negotiable)
 
@@ -34,6 +37,39 @@ This skill is a strong **static** baseline, but it does not replace:
 - **Container image vulnerability scanning** (unless you separately build + scan an image)
 - **Cloud/runtime posture** (IAM, network exposure, key vault policies) unless captured in IaC in-repo
 - **Business-logic flaws** and threat-model-specific issues
+
+## LAUNCH_SECURITY_CHECK (Mandatory Manual Review)
+
+When performing a `LAUNCH_SECURITY_CHECK`, analyze the repository and attempt to detect security issues that static scanners commonly miss.
+
+Focus on architectural and behavioral mistakes that often lead to real-world breaches. Prioritize findings that could realistically cause account takeover, data leaks, or infrastructure compromise if deployed today.
+
+Attempt to detect the following patterns:
+
+1. Missing rate limiting on sensitive endpoints (`/login`, `/signup`, password reset, OTP, verification flows)
+2. Admin or internal routes exposed without authentication (`/admin`, `/internal`, `/debug`, `/metrics`, `/test`)
+3. File upload handling without validation (type allowlist, size limits, filename/path sanitization)
+4. Path traversal risk (user-controlled input used in file paths without sanitization)
+5. Dangerous logging of secrets or credentials (tokens, passwords, auth headers, cookies, API keys, env vars)
+6. Debug/development configuration enabled in deployable paths (debug flags, verbose errors, dev servers)
+7. Hardcoded authentication secrets (JWT/session/encryption/OAuth secrets in code or config)
+8. Weak JWT usage (no expiration, insecure algorithm, incomplete signature/claims validation)
+9. Missing authorization checks (resource access endpoints lacking ownership/permission verification)
+10. Unsafe user input usage (raw input flowing into queries, commands, templates, or filesystem operations)
+11. Dangerous CORS configuration (`*`, unrestricted origins, unsafe credentialed cross-origin access)
+12. Sensitive files committed (`.env`, dumps, key files, credential JSON, backups)
+13. Missing security headers (CSP, X-Frame-Options, HSTS, X-Content-Type-Options)
+14. Public cloud credentials or service keys (AWS keys, Firebase, Supabase service role keys, similar tokens)
+15. Authentication flows relying on client-side trust (client-provided role/user/permission values trusted server-side)
+
+For each issue found, provide:
+
+- `severity`
+- `evidence` (file path and a minimal snippet or line reference)
+- `why this is dangerous`
+- `recommended fix`
+
+If no credible issue is found for a pattern, state that explicitly and avoid speculative claims.
 
 ## Prerequisites
 
@@ -171,7 +207,16 @@ Bash:
 docker run --rm -v "$PWD:/work" -w /work python:3.12-slim python .github/skills/security-scan/scripts/render_report.py --input-dir out --report-json out/report.json --report-md out/report.md
 ```
 
-### 4) Completion Checks
+### 4) Run LAUNCH_SECURITY_CHECK (Mandatory)
+
+Perform a targeted repository review for the 15 patterns above.
+
+- Start with route and middleware discovery, then inspect auth, upload, logging, config, and secret-management paths.
+- Use fast code search to find likely hot spots, but validate findings by reading the real control flow in handlers/services.
+- Record credible findings in `out/manual-review.md` using the required fields: `severity`, `evidence`, `why this is dangerous`, `recommended fix`.
+- Keep findings evidence-based and deployment-realistic.
+
+### 5) Completion Checks
 
 Confirm these files exist:
 
@@ -180,10 +225,11 @@ Confirm these files exist:
 - `out/osv.json`
 - `out/trivy.json`
 - `out/report.md`
+- `out/manual-review.md` (or an explicit note that no credible manual findings were identified)
 
 If any raw scanner JSON is missing, treat the scan as **incomplete coverage** and rerun the missing scanner(s) (do not ship based on partial results).
 
-### 5) Artifact Handling (Recommended)
+### 6) Artifact Handling (Recommended)
 
 Raw scanner outputs can contain sensitive information (especially `semgrep.json`, and sometimes `gitleaks.json` depending on tool behavior/version).
 
