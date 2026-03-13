@@ -209,6 +209,12 @@ def write_report_md(path, findings, coverage_notes, rerun_notes):
         f.write("\n".join(sections))
 
 
+def severity_at_or_above(found: str, threshold: str) -> bool:
+    found_val = SEVERITY_ORDER.get((found or "info").lower(), 0)
+    threshold_val = SEVERITY_ORDER.get((threshold or "info").lower(), 0)
+    return found_val >= threshold_val
+
+
 def main():
     parser = argparse.ArgumentParser(description="Render a consistent security scan report.")
     parser.add_argument(
@@ -231,6 +237,17 @@ def main():
         "--report-md",
         default="/out/report.md",
         help="Output path for markdown report (default: /out/report.md).",
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=["critical", "high", "medium", "low", "info"],
+        help="Exit non-zero if any finding is at or above this severity.",
+    )
+    parser.add_argument(
+        "--fail-on-category",
+        action="append",
+        dest="fail_on_categories",
+        help="Optional category filter for --fail-on (repeatable). Example: --fail-on-category secrets",
     )
     args = parser.parse_args()
 
@@ -267,6 +284,19 @@ def main():
     ]
 
     write_report_md(args.report_md, findings, coverage_notes, rerun_notes)
+
+    if args.fail_on:
+        allowed_categories = {c.lower() for c in (args.fail_on_categories or [])}
+
+        def in_scope(f):
+            if not allowed_categories:
+                return True
+            return (f.get("category") or "").lower() in allowed_categories
+
+        if any(in_scope(f) and severity_at_or_above(f.get("severity"), args.fail_on) for f in findings):
+            print(f"Failing due to findings >= {args.fail_on}.", file=sys.stderr)
+            return 3
+
     return 0
 
 

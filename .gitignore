@@ -1,0 +1,6 @@
+# Scan outputs
+out/
+
+# Python artifacts
+**/__pycache__/
+*.pyc

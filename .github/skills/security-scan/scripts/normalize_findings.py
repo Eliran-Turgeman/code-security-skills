@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Normalize scanner outputs into the canonical findings schema.
 
@@ -20,6 +20,19 @@ import hashlib
 import json
 import os
 from typing import Any, Dict, List
+
+
+def clamp_severity(value: str) -> str:
+    v = str(value or "").strip().lower()
+    if v in {"critical", "high", "medium", "low", "info"}:
+        return v
+    if v == "warning":
+        return "medium"
+    if v == "error":
+        return "high"
+    if v in {"unknown", "none", "n/a", "na"}:
+        return "info"
+    return "info"
 
 
 def sha_id(*parts: str) -> str:
@@ -92,7 +105,7 @@ def norm_semgrep(path: str) -> List[Dict[str, Any]]:
         finding = {
             "id": sha_id("semgrep", str(path_val), str(start_line), rule_id),
             "category": "sast",
-            "severity": severity,
+            "severity": clamp_severity(severity),
             "confidence": confidence,
             "tool": "semgrep",
             "title": title,
@@ -101,7 +114,7 @@ def norm_semgrep(path: str) -> List[Dict[str, Any]]:
             "end_line": end_line,
             "package": None,
             "version": None,
-            "evidence": str(item.get("code") or ""),
+            "evidence": f"{rule_id} detected (code redacted)",
             "remediation": str(extra.get("fix") or "Follow the Semgrep rule guidance."),
         }
         findings.append(finding)
@@ -170,7 +183,7 @@ def norm_trivy(path: str) -> List[Dict[str, Any]]:
         for m in misconfigs:
             rule_id = str(m.get("ID") or "trivy")
             title = str(m.get("Title") or rule_id)
-            severity = str(m.get("Severity") or "low").lower()
+            severity = clamp_severity(str(m.get("Severity") or "low").lower())
             cause = m.get("CauseMetadata") or {}
             start_line = int(cause.get("StartLine") or 0)
             end_line = int(cause.get("EndLine") or start_line or 0)
