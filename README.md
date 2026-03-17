@@ -2,6 +2,12 @@
 
 ![Watch demo](security_skill_demo.gif)
 
+## Example Report
+
+#file:report.png
+
+![Example report](report.png)
+
 ## Skill Included
 
 - `security-scan`: full static security scan (secrets + SAST + SCA + IaC) plus `LAUNCH_SECURITY_CHECK` for high-risk behavioral/architectural gaps.

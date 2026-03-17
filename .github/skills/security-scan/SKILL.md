@@ -12,10 +12,11 @@ After static results are generated, run a **LAUNCH_SECURITY_CHECK** manual revie
 
 ## What You Get
 
-The scan writes raw tool outputs plus normalized findings and a rendered report.
+The scan writes raw tool outputs plus normalized findings, an agent-curated finding set, and a rendered report.
 
 - Raw scanner outputs (JSON): `out/gitleaks.json`, `out/semgrep.json`, `out/osv.json`, `out/trivy.json`
 - Normalized findings (canonical schema): `out/findings.secrets.json`, `out/findings.sast.json`, `out/findings.sca.json`, `out/findings.iac.json`
+- Agent-curated findings (prioritized, de-noised, combo-aware): `out/findings.agent.json`
 - Unified report: `out/report.json`, `out/report.md`
 - Manual review findings (recommended): `out/manual-review.md`
 
@@ -26,7 +27,7 @@ The scan writes raw tool outputs plus normalized findings and a rendered report.
 - Normalization/reporting must use the bundled scripts:
   - [normalize_findings.py](./scripts/normalize_findings.py)
   - [render_report.py](./scripts/render_report.py)
-- Do not change the finding schema or drop fields.
+- Do not change the canonical finding schema or drop fields. If you add fields (e.g., `triage`, `triage_reason`), keep all original fields intact.
 - Treat `out/` as sensitive: don’t commit it and don’t upload it to public locations.
 
 ## What This Scan Does NOT Cover (Avoid False Confidence)
@@ -185,12 +186,73 @@ Bash:
 docker run --rm -v "$PWD:/work" -w /work python:3.12-slim python .github/skills/security-scan/scripts/normalize_findings.py --out-dir out
 ```
 
-### 3) Render a Unified Report (Mandatory)
+### 3) Agent Triage (Toxic Combinations + Codebase Context)
+
+This step is **agent-driven** (not a script).
+
+Goal: starting from the normalized findings (`out/findings.*.json`), produce `out/findings.agent.json` that is:
+
+- **Prioritized using toxic combinations** (defined below; not user-supplied config)
+- **Contextualized using the actual codebase** (paths, call sites, whether reachable in production)
+- **Actionable** (clear `triage_reason` and remediation guidance)
+
+Rules for what the agent may change:
+
+- **Suppress** obvious false positives (keep the record but set `triage: suppressed` and explain why)
+- **Merge/deduplicate** duplicates across tools into one best record (keep the strongest evidence and add `also_found_by` if helpful)
+- **Escalate or de-escalate** severity/confidence/triage tier based on code context
+- **Add derived findings** (e.g., a composite “toxic combo” finding) when multiple independent findings combine into a higher-risk scenario
+- **Delete** only if the finding is malformed/unusable (missing file/package and no usable evidence); otherwise prefer `suppressed` for auditability
+
+Safety constraints for this step:
+
+- Never paste raw secrets. Never include token-like strings in `evidence`.
+- If quoting code for context, keep it minimal and redact any token-like values. Prefer referencing file paths + function names over copying code.
+
+#### Toxic Combinations (Agent-Defined)
+
+Treat these combinations as **higher risk than the individual findings**. When a combo matches, do both:
+
+1) Escalate involved findings to `triage: action_required` (unless they are clearly test/demo/vendor)
+2) Add one composite finding with `category: toxic_combo` summarizing the combined risk
+
+Combos:
+
+- **Leaked secret + public exposure**
+  - Signals: any `secrets` finding + any IaC finding indicating public exposure (`public`, `0.0.0.0/0`, “open to the internet”, unrestricted ingress)
+  - Why higher risk: credentials + exposure increases immediate exploitability and blast radius
+- **RCE/injection + inbound exposure**
+  - Signals: SAST indicating command injection / SQLi / SSTI / deserialization + an internet-facing route/service or public ingress
+  - Why higher risk: reachable exploitation path
+- **SSRF + cloud metadata / credential access**
+  - Signals: SSRF-like finding + evidence of requests to metadata endpoints (e.g., `169.254.169.254`) or default credentials chains
+  - Why higher risk: credential theft leading to infra compromise
+- **High-severity dependency vuln + runtime usage**
+  - Signals: SCA high/critical + dependency appears in runtime codepaths (not test/dev-only)
+  - Why higher risk: practical exploitability
+- **Public data store + weak/no auth**
+  - Signals: IaC public database/storage exposure + app lacks authentication/authorization on relevant endpoints
+  - Why higher risk: direct data exfiltration risk
+
+#### Context Enrichment (Agent-Driven)
+
+For each action-required/review finding:
+
+- Confirm whether the file is **production code** vs **tests/examples/vendor/docs**.
+- Read the surrounding code to answer: “Is this reachable in production?”
+- Add 1–3 sentences to `triage_reason` describing the real-world risk *in this repo*.
+
+Output requirement:
+
+- Write the curated list to `out/findings.agent.json` as a JSON array using the same canonical schema fields.
+- Each record should include `triage` in `{action_required, review, informational, suppressed}` and a short `triage_reason`.
+
+### 4) Render a Unified Report (Mandatory)
 
 Option A (local Python 3):
 
 ```bash
-python .github/skills/security-scan/scripts/render_report.py --input-dir out --report-json out/report.json --report-md out/report.md
+python .github/skills/security-scan/scripts/render_report.py --input out/findings.agent.json --report-json out/report.json --report-md out/report.md
 ```
 
 Option B (Dockerized Python):
@@ -198,16 +260,16 @@ Option B (Dockerized Python):
 PowerShell:
 
 ```powershell
-docker run --rm -v "${repo}:/work" -w /work python:3.12-slim python .github/skills/security-scan/scripts/render_report.py --input-dir out --report-json out/report.json --report-md out/report.md
+docker run --rm -v "${repo}:/work" -w /work python:3.12-slim python .github/skills/security-scan/scripts/render_report.py --input out/findings.agent.json --report-json out/report.json --report-md out/report.md
 ```
 
 Bash:
 
 ```bash
-docker run --rm -v "$PWD:/work" -w /work python:3.12-slim python .github/skills/security-scan/scripts/render_report.py --input-dir out --report-json out/report.json --report-md out/report.md
+docker run --rm -v "$PWD:/work" -w /work python:3.12-slim python .github/skills/security-scan/scripts/render_report.py --input out/findings.agent.json --report-json out/report.json --report-md out/report.md
 ```
 
-### 4) Run LAUNCH_SECURITY_CHECK (Mandatory)
+### 5) Run LAUNCH_SECURITY_CHECK (Mandatory)
 
 Perform a targeted repository review for the 15 patterns above.
 
@@ -216,7 +278,7 @@ Perform a targeted repository review for the 15 patterns above.
 - Record credible findings in `out/manual-review.md` using the required fields: `severity`, `evidence`, `why this is dangerous`, `recommended fix`.
 - Keep findings evidence-based and deployment-realistic.
 
-### 5) Completion Checks
+### 6) Completion Checks
 
 Confirm these files exist:
 
@@ -224,12 +286,13 @@ Confirm these files exist:
 - `out/semgrep.json`
 - `out/osv.json`
 - `out/trivy.json`
+- `out/findings.agent.json`
 - `out/report.md`
 - `out/manual-review.md` (or an explicit note that no credible manual findings were identified)
 
 If any raw scanner JSON is missing, treat the scan as **incomplete coverage** and rerun the missing scanner(s) (do not ship based on partial results).
 
-### 6) Artifact Handling (Recommended)
+### 7) Artifact Handling (Recommended)
 
 Raw scanner outputs can contain sensitive information (especially `semgrep.json`, and sometimes `gitleaks.json` depending on tool behavior/version).
 
@@ -245,11 +308,14 @@ Remove-Item -Force out\gitleaks.json,out\semgrep.json,out\osv.json,out\trivy.jso
 
 ## How to Consume Results (For Inexperienced Engineers)
 
-- Start with `out/report.md` → **Top 10 Fixes**.
-- Fix **secrets first**: remove, rotate, and prevent re-introduction (environment variables + secrets manager).
-- Then fix **high severity SAST** issues that mention injection/RCE/auth bypass.
-- Then fix dependency vulnerabilities by upgrading packages.
-- Then fix IaC findings that mention public exposure or overly permissive access.
+- Start with `out/report.md` → **Executive Summary** for a quick overview.
+- Fix everything in **Action Required** first — these are high-confidence, high-severity issues in production code.
+  - Secrets first: remove, rotate, and move to a secrets manager.
+  - Then RCE/injection SAST issues.
+  - Then high-severity dependency vulnerabilities.
+- Review the **Worth Reviewing** section next — these need human judgment to determine if they're real issues.
+- **Informational** findings are low-risk or in test/example code — address at your discretion.
+- **Suppressed** findings are likely false positives — listed for auditability. Only revisit if your context differs from the suppression reason.
 
 ## Tool Versions (Stability Note)
 
@@ -275,14 +341,31 @@ $TRIVY_IMAGE    = 'aquasec/trivy:<tag-or-digest>'
 
 Then replace the image names in the `docker run` commands.
 
+### Triage Tiers
+
+| Tier | Meaning |
+|------|---------|
+| `action_required` | High-confidence, high-severity findings in production code. Fix these. |
+| `review` | Medium severity or low confidence on high severity. Needs human judgment. |
+| `informational` | Low risk, test code, vendored code, or below confidence threshold. |
+| `suppressed` | Matched a known false-positive pattern. Listed for auditability. |
+
 ## CI Mode (Recommended)
 
 ### Gate on severity
 
-Fail the job if any finding is at or above a severity threshold:
+Fail the job if any non-suppressed finding is at or above a severity threshold. Suppressed findings are excluded by default:
 
 ```bash
-python .github/skills/security-scan/scripts/render_report.py --input-dir out --report-json out/report.json --report-md out/report.md --fail-on high
+python .github/skills/security-scan/scripts/render_report.py --input out/findings.agent.json --report-json out/report.json --report-md out/report.md --fail-on high
+```
+
+### Gate on triage tier
+
+Fail the job if any finding is classified as action-required (requires `out/findings.agent.json` with `triage` fields):
+
+```bash
+python .github/skills/security-scan/scripts/render_report.py --input out/findings.agent.json --report-json out/report.json --report-md out/report.md --fail-on-tier action_required
 ```
 
 ### Gate on secrets only
@@ -290,7 +373,7 @@ python .github/skills/security-scan/scripts/render_report.py --input-dir out --r
 Fail if any secrets are found (regardless of severity):
 
 ```bash
-python .github/skills/security-scan/scripts/render_report.py --input-dir out --report-json out/report.json --report-md out/report.md --fail-on info --fail-on-category secrets
+python .github/skills/security-scan/scripts/render_report.py --input out/findings.agent.json --report-json out/report.json --report-md out/report.md --fail-on info --fail-on-category secrets
 ```
 
 ## Troubleshooting (Common)
